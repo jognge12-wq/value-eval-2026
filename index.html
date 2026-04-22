@@ -1,0 +1,1795 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="apple-mobile-web-app-title" content="バリュー評価">
+<link rel="apple-touch-icon" id="apple-touch-icon" href="">
+<title>2026年バリュー評価 記録アプリ</title>
+<!--
+  ========================================================================
+  2026年バリュー評価 記録アプリ（目標②③専用）
+  ========================================================================
+
+  【目的】
+  住宅施工管理業務における2026年度バリュー評価の目標達成活動を
+  日々記録し、期末評価時の振り返り資料作成を効率化する。
+
+  【対象目標】
+  ② 管理プロセスの高度化
+     IT・AIの知識を継続的に学び、グループ内からの相談に対応する。
+     現場業務に役立つ使い方やツール作成を月1回のペースで発信する。
+
+  ③ 技術の高度化
+     自分の現場で発生した不具合・手戻り等を蓄積し、
+     営業・設計・生産の各部門間で共有することで、
+     社内の不具合防止に努める。
+
+  ※ 目標① 専門性の獲得はGMAP試験対策が中心のため、本アプリの対象外。
+
+  【データ保存】
+  localStorage（キー: value_eval_2026_v2）
+  端末のブラウザ内に保存。機種変更時はバックアップ機能を使用。
+
+  【データ構造】
+  records: Array<Record>
+
+  Record (共通):
+    - id: number (Date.now()で生成)
+    - goal: 2 | 3
+    - date: string (YYYY-MM-DD)
+    - photos: string[] (Base64 JPEG, 長辺1280pxにリサイズ)
+
+  Record (goal=2):
+    - type: '学習' | '相談対応' | '発信' | 'ツール作成'
+    - title: string
+    - content: string
+
+  Record (goal=3):
+    - site: string
+    - event: string
+    - cause: string
+    - action: string
+    - shareInternal: string[]  複数選択: ['営業','設計','生産']
+    - shareMethod: string      'LINE WORKSノート' | '生産ミーティング' | 'メール' | 'その他'
+
+  【今後の拡張予定（Claude Code引き継ぎメモ）】
+  - LINE WORKSノート投稿用のMarkdown出力
+  - 写真のEXIF情報から撮影日時を自動入力
+  - タグ機能（現場名・工種などで横断検索）
+  - 月次レポート自動生成
+  - iCloud/Google Driveとの同期（現状はJSONバックアップのみ）
+  ========================================================================
+-->
+<style>
+  :root {
+    --bg: #f5f3ee;
+    --surface: #ffffff;
+    --ink: #1a1a1a;
+    --muted: #6b6b6b;
+    --line: #e0ddd5;
+    --accent-2: #5a7a4c;
+    --accent-3: #3d5a7a;
+    --accent-2-bg: #ecf1e8;
+    --accent-3-bg: #e6edf5;
+  }
+
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+
+  body {
+    margin: 0;
+    font-family: -apple-system, BlinkMacSystemFont, "Hiragino Sans", "Yu Gothic", sans-serif;
+    background: var(--bg);
+    color: var(--ink);
+    font-size: 15px;
+    line-height: 1.6;
+    padding-bottom: 30px;
+  }
+
+  .sticky-header {
+    position: sticky;
+    top: 0;
+    z-index: 10;
+  }
+
+  header {
+    background: var(--surface);
+    border-bottom: 1px solid var(--line);
+    padding: 16px 20px;
+  }
+
+  header h1 {
+    margin: 0;
+    font-size: 17px;
+    font-weight: 600;
+    letter-spacing: 0.02em;
+  }
+
+  header .sub {
+    font-size: 12px;
+    color: var(--muted);
+    margin-top: 2px;
+  }
+
+  .tabs {
+    display: flex;
+    background: var(--surface);
+    border-bottom: 1px solid var(--line);
+  }
+
+  .tab {
+    flex: 1;
+    min-width: 60px;
+    padding: 10px 4px;
+    text-align: center;
+    font-size: 11px;
+    font-weight: 500;
+    color: var(--muted);
+    background: none;
+    border: none;
+    border-bottom: 2px solid transparent;
+    cursor: pointer;
+    white-space: nowrap;
+    font-family: inherit;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 2px;
+  }
+
+  .tab svg {
+    width: 20px;
+    height: 20px;
+    stroke: currentColor;
+    fill: none;
+    stroke-width: 1.8;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+  }
+
+  .tab.active {
+    color: var(--ink);
+    border-bottom-color: var(--ink);
+  }
+
+  main {
+    padding: 16px;
+    max-width: 600px;
+    margin: 0 auto;
+  }
+
+  .view { display: none; }
+  .view.active { display: block; }
+
+  /* 入力カード */
+  .goal-card {
+    background: var(--surface);
+    border-radius: 12px;
+    padding: 18px;
+    margin-bottom: 14px;
+    border: 1px solid var(--line);
+  }
+
+  .goal-card.g2 { border-left: 4px solid var(--accent-2); }
+  .goal-card.g3 { border-left: 4px solid var(--accent-3); }
+
+  .goal-label {
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.1em;
+    color: var(--muted);
+    margin-bottom: 4px;
+  }
+
+  .goal-title {
+    font-size: 16px;
+    font-weight: 600;
+    margin-bottom: 4px;
+  }
+
+  .goal-desc {
+    font-size: 12px;
+    color: var(--muted);
+    margin-bottom: 14px;
+    line-height: 1.5;
+  }
+
+  .field {
+    margin-bottom: 12px;
+  }
+
+  .field label {
+    display: block;
+    font-size: 12px;
+    color: var(--muted);
+    margin-bottom: 4px;
+    font-weight: 500;
+  }
+
+  input[type="text"],
+  input[type="date"],
+  textarea,
+  select {
+    width: 100%;
+    padding: 10px 12px;
+    font-size: 15px;
+    font-family: inherit;
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    background: var(--bg);
+    color: var(--ink);
+  }
+
+  textarea {
+    resize: vertical;
+    min-height: 70px;
+  }
+
+  input:focus, textarea:focus, select:focus {
+    outline: none;
+    border-color: var(--ink);
+    background: var(--surface);
+  }
+
+  /* チェックボックス群 */
+  .check-group {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+  }
+
+  .check-chip {
+    padding: 8px 14px;
+    border: 1px solid var(--line);
+    border-radius: 20px;
+    font-size: 13px;
+    cursor: pointer;
+    background: var(--bg);
+    color: var(--muted);
+    user-select: none;
+  }
+
+  .check-chip.checked {
+    background: var(--ink);
+    color: var(--surface);
+    border-color: var(--ink);
+  }
+
+  .btn {
+    display: block;
+    width: 100%;
+    padding: 14px;
+    font-size: 15px;
+    font-weight: 600;
+    border: none;
+    border-radius: 8px;
+    cursor: pointer;
+    font-family: inherit;
+    margin-top: 6px;
+  }
+
+  .btn-primary {
+    background: var(--ink);
+    color: var(--surface);
+  }
+
+  .btn-secondary {
+    background: var(--surface);
+    color: var(--ink);
+    border: 1px solid var(--line);
+  }
+
+  .btn-danger {
+    background: none;
+    color: #c8554a;
+    border: 1px solid var(--line);
+    padding: 8px;
+    font-size: 13px;
+  }
+
+  /* 写真 */
+  .photo-upload {
+    display: flex;
+    gap: 8px;
+    margin-top: 8px;
+  }
+
+  .photo-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    padding: 8px 16px;
+    border: 1px solid var(--line);
+    border-radius: 24px;
+    background: var(--surface);
+    color: var(--ink);
+    font-size: 13px;
+    font-weight: 500;
+    cursor: pointer;
+    font-family: inherit;
+    white-space: nowrap;
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  .photo-btn:active {
+    background: var(--bg);
+  }
+
+  .photo-btn svg {
+    width: 15px;
+    height: 15px;
+    flex-shrink: 0;
+    stroke: currentColor;
+    fill: none;
+    stroke-width: 2;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+  }
+
+  .photo-input { display: none; }
+
+  .photo-preview {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(80px, 1fr));
+    gap: 6px;
+    margin-top: 10px;
+  }
+
+  .photo-thumb {
+    position: relative;
+    aspect-ratio: 1;
+    border-radius: 6px;
+    overflow: hidden;
+    background: var(--bg);
+  }
+
+  .photo-thumb img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    cursor: pointer;
+  }
+
+  .photo-remove {
+    position: absolute;
+    top: 2px;
+    right: 2px;
+    width: 22px;
+    height: 22px;
+    border-radius: 50%;
+    background: rgba(0,0,0,0.7);
+    color: white;
+    border: none;
+    font-size: 14px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    line-height: 1;
+    padding: 0;
+  }
+
+  /* 一覧 */
+  .filter-bar {
+    display: flex;
+    gap: 8px;
+    margin-bottom: 14px;
+    flex-wrap: wrap;
+  }
+
+  .chip {
+    padding: 6px 12px;
+    border-radius: 16px;
+    font-size: 12px;
+    font-weight: 500;
+    border: 1px solid var(--line);
+    background: var(--surface);
+    cursor: pointer;
+    color: var(--muted);
+    font-family: inherit;
+  }
+
+  .chip.active {
+    background: var(--ink);
+    color: var(--surface);
+    border-color: var(--ink);
+  }
+
+  .record {
+    background: var(--surface);
+    border-radius: 10px;
+    padding: 14px;
+    margin-bottom: 10px;
+    border: 1px solid var(--line);
+    border-left: 3px solid var(--line);
+  }
+
+  .record.g2 { border-left-color: var(--accent-2); }
+  .record.g3 { border-left-color: var(--accent-3); }
+
+  .record-head {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 8px;
+    font-size: 12px;
+    color: var(--muted);
+  }
+
+  .record-tag {
+    font-weight: 600;
+    padding: 2px 8px;
+    border-radius: 4px;
+    font-size: 11px;
+  }
+
+  .record-tag.g2 { background: var(--accent-2-bg); color: var(--accent-2); }
+  .record-tag.g3 { background: var(--accent-3-bg); color: var(--accent-3); }
+
+  .record-body {
+    font-size: 14px;
+    line-height: 1.6;
+    white-space: pre-wrap;
+    word-break: break-word;
+  }
+
+  .record-meta {
+    margin-top: 8px;
+    font-size: 12px;
+    color: var(--muted);
+  }
+
+  .record-photos {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(70px, 1fr));
+    gap: 4px;
+    margin-top: 10px;
+  }
+
+  .record-photos img {
+    width: 100%;
+    aspect-ratio: 1;
+    object-fit: cover;
+    border-radius: 4px;
+    cursor: pointer;
+  }
+
+  .record-actions {
+    display: flex;
+    gap: 8px;
+    margin-top: 10px;
+  }
+
+  .record-actions button {
+    flex: 1;
+    padding: 6px;
+    font-size: 12px;
+    background: none;
+    border: 1px solid var(--line);
+    border-radius: 6px;
+    cursor: pointer;
+    color: var(--muted);
+    font-family: inherit;
+  }
+
+  .empty {
+    text-align: center;
+    padding: 60px 20px;
+    color: var(--muted);
+    font-size: 14px;
+  }
+
+  /* 出力 */
+  .output-section {
+    background: var(--surface);
+    border-radius: 12px;
+    padding: 18px;
+    margin-bottom: 14px;
+    border: 1px solid var(--line);
+  }
+
+  .output-section h3 {
+    margin: 0 0 12px 0;
+    font-size: 14px;
+    font-weight: 600;
+  }
+
+  .stat-row {
+    display: flex;
+    justify-content: space-between;
+    padding: 8px 0;
+    border-bottom: 1px dashed var(--line);
+    font-size: 14px;
+  }
+
+  .stat-row:last-child { border-bottom: none; }
+
+  .stat-num {
+    font-weight: 600;
+    font-variant-numeric: tabular-nums;
+  }
+
+  .output-text {
+    background: var(--bg);
+    padding: 14px;
+    border-radius: 8px;
+    font-family: -apple-system, "Hiragino Sans", monospace;
+    font-size: 13px;
+    line-height: 1.7;
+    white-space: pre-wrap;
+    max-height: 400px;
+    overflow-y: auto;
+    border: 1px solid var(--line);
+  }
+
+  /* モーダル */
+  .modal {
+    display: none;
+    position: fixed;
+    top: 0; left: 0; right: 0; bottom: 0;
+    background: rgba(0,0,0,0.92);
+    z-index: 1000;
+    align-items: center;
+    justify-content: center;
+    padding: 20px;
+  }
+
+  .modal.show { display: flex; }
+
+  .modal img {
+    max-width: 100%;
+    max-height: 90vh;
+    object-fit: contain;
+  }
+
+  .modal-close {
+    position: absolute;
+    top: 20px;
+    right: 20px;
+    width: 40px;
+    height: 40px;
+    border-radius: 50%;
+    background: rgba(255,255,255,0.2);
+    color: white;
+    border: none;
+    font-size: 22px;
+    cursor: pointer;
+  }
+
+  .toast {
+    position: fixed;
+    bottom: 30px;
+    left: 50%;
+    transform: translateX(-50%);
+    background: var(--ink);
+    color: var(--surface);
+    padding: 10px 20px;
+    border-radius: 24px;
+    font-size: 13px;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.2s;
+    z-index: 100;
+  }
+
+  .toast.show { opacity: 1; }
+
+  .settings-section {
+    background: var(--surface);
+    border-radius: 12px;
+    padding: 18px;
+    margin-bottom: 14px;
+    border: 1px solid var(--line);
+  }
+
+  .settings-section h3 {
+    margin: 0 0 4px 0;
+    font-size: 14px;
+    font-weight: 600;
+  }
+
+  .settings-section .desc {
+    font-size: 12px;
+    color: var(--muted);
+    margin-bottom: 12px;
+  }
+
+  .doc-thumb {
+    background: var(--bg);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 6px 4px;
+    border-radius: 6px;
+    border: 1px solid var(--line);
+    aspect-ratio: 1;
+    overflow: hidden;
+    position: relative;
+  }
+
+  .doc-icon {
+    font-size: 10px;
+    font-weight: 700;
+    color: #c8554a;
+    border: 1.5px solid #c8554a;
+    border-radius: 3px;
+    padding: 1px 4px;
+    margin-bottom: 4px;
+    flex-shrink: 0;
+  }
+
+  .doc-name {
+    font-size: 9px;
+    color: var(--muted);
+    text-align: center;
+    word-break: break-all;
+    line-height: 1.3;
+    overflow: hidden;
+    max-height: 28px;
+  }
+
+  .record-docs {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin-top: 8px;
+  }
+
+  .doc-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 4px 10px;
+    border: 1px solid #c8554a;
+    border-radius: 12px;
+    font-size: 12px;
+    color: #c8554a;
+    text-decoration: none;
+    background: #fff5f5;
+  }
+
+  .doc-badge-icon {
+    font-size: 10px;
+    font-weight: 700;
+  }
+
+  .exported-badge {
+    font-size: 10px;
+    padding: 2px 6px;
+    border-radius: 4px;
+    background: var(--accent-2-bg);
+    color: var(--accent-2);
+    font-weight: 600;
+  }
+
+  @keyframes spin {
+    to { transform: rotate(360deg); }
+  }
+
+  #sync-wrap {
+    opacity: 0.25;
+    transition: opacity 0.3s;
+    cursor: pointer;
+    flex-shrink: 0;
+    margin-top: 5px;
+  }
+
+  #sync-icon {
+    display: block;
+    stroke: var(--muted);
+    fill: none;
+    stroke-width: 1.8;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+    transition: stroke 0.3s;
+  }
+
+  #sync-wrap.syncing #sync-icon {
+    animation: spin 1s linear infinite;
+    transform-box: fill-box;
+    transform-origin: center;
+  }
+</style>
+</head>
+<body>
+
+<div class="sticky-header">
+<header>
+  <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:8px;">
+    <div>
+      <h1>2026年 バリュー評価</h1>
+      <div class="sub">②管理プロセス ／ ③技術の高度化</div>
+    </div>
+    <div id="sync-wrap" onclick="document.querySelector('[data-view=settings]').click()" title="同期状態">
+      <svg id="sync-icon" viewBox="0 0 24 24" width="20" height="20">
+        <polyline points="23 4 23 10 17 10"/>
+        <polyline points="1 20 1 14 7 14"/>
+        <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/>
+      </svg>
+    </div>
+  </div>
+</header>
+
+<div class="tabs">
+  <button class="tab active" data-view="record">
+    <svg viewBox="0 0 24 24"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/></svg>
+    記録
+  </button>
+  <button class="tab" data-view="list">
+    <svg viewBox="0 0 24 24"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg>
+    一覧
+  </button>
+  <button class="tab" data-view="output">
+    <svg viewBox="0 0 24 24"><polyline points="6 9 12 15 18 9"/></svg>
+    出力
+  </button>
+  <button class="tab" data-view="settings">
+    <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+    設定
+  </button>
+</div>
+</div>
+
+<main>
+
+<!-- 記録タブ -->
+<section id="view-record" class="view active">
+
+  <!-- 目標② -->
+  <div class="goal-card g2">
+    <div class="goal-label">② 管理プロセスの高度化</div>
+    <div class="goal-title">IT・AI 学び／相談／発信</div>
+    <div class="goal-desc">IT・AIの知識を継続的に学び、グループ内からの相談に対応する。現場業務に役立つ使い方やツール作成を月1回のペースで発信する。</div>
+
+    <div class="field">
+      <label>日付</label>
+      <input type="date" id="g2-date">
+    </div>
+    <div class="field">
+      <label>区分</label>
+      <select id="g2-type">
+        <option value="学習">学習（自分で学んだ）</option>
+        <option value="相談対応">相談対応（グループ内から聞かれた）</option>
+        <option value="発信">発信（チームに共有した）</option>
+        <option value="ツール作成">ツール作成</option>
+      </select>
+    </div>
+    <div class="field">
+      <label>テーマ・タイトル</label>
+      <input type="text" id="g2-title" placeholder="例：議事録AI要約の使い方">
+    </div>
+    <div class="field">
+      <label>内容・成果</label>
+      <textarea id="g2-content" placeholder="何をしたか、誰に共有したか、反応はどうだったか"></textarea>
+    </div>
+    <div class="field">
+      <label>写真</label>
+      <div class="photo-upload">
+        <label class="photo-btn">
+          <svg viewBox="0 0 24 24"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg>
+          カメラ
+          <input type="file" class="photo-input" accept="image/*" capture="environment" onchange="addPhoto(2, this)">
+        </label>
+        <label class="photo-btn">
+          <svg viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>
+          アルバム
+          <input type="file" class="photo-input" accept="image/*" multiple onchange="addPhoto(2, this)">
+        </label>
+        <label class="photo-btn">
+          <svg viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+          PDF
+          <input type="file" class="photo-input" accept="application/pdf" multiple onchange="addDoc(2, this)">
+        </label>
+      </div>
+      <div class="photo-preview" id="g2-photos"></div>
+    </div>
+    <div id="g2-edit-bar" style="display:none;align-items:center;justify-content:space-between;margin-bottom:6px;padding:8px 12px;background:var(--accent-2-bg);border-radius:8px;font-size:13px;">
+      <span style="color:var(--accent-2);font-weight:600;">編集モード</span>
+      <button onclick="cancelEdit()" style="font-size:12px;padding:4px 10px;border:1px solid var(--accent-2);border-radius:12px;background:none;color:var(--accent-2);cursor:pointer;font-family:inherit;">キャンセル</button>
+    </div>
+    <button class="btn btn-primary" id="g2-save-btn" onclick="saveRecord(2)">記録する</button>
+  </div>
+
+  <!-- 目標③ -->
+  <div class="goal-card g3">
+    <div class="goal-label">③ 技術の高度化</div>
+    <div class="goal-title">不具合・手戻り事例（社内共有）</div>
+    <div class="goal-desc">自分の現場で発生した不具合・手戻り等を蓄積し、営業・設計・生産の各部門間で共有することで、社内の不具合防止に努める。</div>
+
+    <div class="field">
+      <label>日付</label>
+      <input type="date" id="g3-date">
+    </div>
+    <div class="field">
+      <label>現場名</label>
+      <input type="text" id="g3-site" placeholder="例：山田様邸">
+    </div>
+    <div class="field">
+      <label>事象</label>
+      <input type="text" id="g3-event" placeholder="例：天井クロスのジョイント目立ち">
+    </div>
+    <div class="field">
+      <label>原因</label>
+      <textarea id="g3-cause" placeholder="なぜ発生したか"></textarea>
+    </div>
+    <div class="field">
+      <label>対策・再発防止</label>
+      <textarea id="g3-action" placeholder="どう直したか、今後どう防ぐか"></textarea>
+    </div>
+    <div class="field">
+      <label>社内共有先（複数選択可）</label>
+      <div class="check-group" id="g3-share-internal">
+        <div class="check-chip" data-value="営業">営業</div>
+        <div class="check-chip" data-value="設計">設計</div>
+        <div class="check-chip" data-value="生産">生産</div>
+      </div>
+    </div>
+    <div class="field">
+      <label>写真</label>
+      <div class="photo-upload">
+        <label class="photo-btn">
+          <svg viewBox="0 0 24 24"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg>
+          カメラ
+          <input type="file" class="photo-input" accept="image/*" capture="environment" onchange="addPhoto(3, this)">
+        </label>
+        <label class="photo-btn">
+          <svg viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>
+          アルバム
+          <input type="file" class="photo-input" accept="image/*" multiple onchange="addPhoto(3, this)">
+        </label>
+        <label class="photo-btn">
+          <svg viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+          PDF
+          <input type="file" class="photo-input" accept="application/pdf" multiple onchange="addDoc(3, this)">
+        </label>
+      </div>
+      <div class="photo-preview" id="g3-photos"></div>
+    </div>
+    <div id="g3-edit-bar" style="display:none;align-items:center;justify-content:space-between;margin-bottom:6px;padding:8px 12px;background:var(--accent-3-bg);border-radius:8px;font-size:13px;">
+      <span style="color:var(--accent-3);font-weight:600;">編集モード</span>
+      <button onclick="cancelEdit()" style="font-size:12px;padding:4px 10px;border:1px solid var(--accent-3);border-radius:12px;background:none;color:var(--accent-3);cursor:pointer;font-family:inherit;">キャンセル</button>
+    </div>
+    <button class="btn btn-primary" id="g3-save-btn" onclick="saveRecord(3)">記録する</button>
+  </div>
+
+</section>
+
+<!-- 一覧タブ -->
+<section id="view-list" class="view">
+  <div class="filter-bar">
+    <button class="chip active" data-filter="all">すべて</button>
+    <button class="chip" data-filter="2">② 管理プロセス</button>
+    <button class="chip" data-filter="3">③ 技術</button>
+  </div>
+  <div id="record-list"></div>
+</section>
+
+<!-- 出力タブ -->
+<section id="view-output" class="view">
+  <div class="output-section">
+    <h3>達成状況サマリ</h3>
+    <div id="stats"></div>
+  </div>
+
+  <div class="output-section">
+    <h3>期間で出力</h3>
+    <div class="field">
+      <label>出力する目標</label>
+      <select id="out-goal">
+        <option value="all">全て（②③ 個別出力）</option>
+        <option value="2">② IT・AI 学び／相談／発信</option>
+        <option value="3">③ 不具合・手戻り事例（社内共有）</option>
+      </select>
+    </div>
+    <div class="field">
+      <label>開始日</label>
+      <input type="date" id="out-from">
+    </div>
+    <div class="field">
+      <label>終了日</label>
+      <input type="date" id="out-to">
+    </div>
+    <button class="btn btn-secondary" onclick="generateText()">テキスト生成</button>
+  </div>
+
+  <div id="output-results"></div>
+
+  <div class="output-section" id="output-photos-section" style="display:none;">
+    <h3>写真一覧</h3>
+    <div style="font-size:12px;color:var(--muted);margin-bottom:10px;">長押しで保存 → LINE WORKSノートに添付</div>
+    <div id="output-photos"></div>
+  </div>
+</section>
+
+<!-- 設定タブ -->
+<section id="view-settings" class="view">
+  <div class="settings-section">
+    <h3>データのバックアップ</h3>
+    <div class="desc">記録データをJSONファイルで書き出します。月1回程度の実行を推奨。</div>
+    <button class="btn btn-secondary" onclick="exportData()">データを書き出す</button>
+  </div>
+
+  <div class="settings-section">
+    <h3>データの復元</h3>
+    <div class="desc">書き出したJSONファイルから復元します（既存データは上書き）。</div>
+    <input type="file" id="import-file" accept=".json" style="margin-bottom:10px;">
+    <button class="btn btn-secondary" onclick="importData()">復元する</button>
+  </div>
+
+  <div class="settings-section">
+    <h3>全データ削除</h3>
+    <div class="desc">すべての記録を削除します。元に戻せません。</div>
+    <button class="btn btn-danger" onclick="clearAll()">すべて削除</button>
+  </div>
+
+  <div class="settings-section">
+    <h3>クラウド同期（GitHub Gist）</h3>
+    <div class="desc">GitHubアカウントのGistにデータを自動保存します。iPhoneとiPadで同じデータを共有できます。</div>
+    <div class="field">
+      <label>Personal Access Token（スコープ: gist）</label>
+      <input type="password" id="gist-token" placeholder="ghp_xxxxxxxxxxxx" autocomplete="new-password" style="font-size:13px;">
+    </div>
+    <div style="display:flex;gap:8px;margin-top:4px;">
+      <button class="btn btn-secondary" onclick="saveGistSettings()" style="flex:1;">保存して同期</button>
+      <button class="btn btn-secondary" onclick="manualSync()" style="flex:1;">今すぐ同期</button>
+    </div>
+    <div id="gist-sync-status" style="font-size:12px;min-height:18px;margin-top:8px;"></div>
+    <div id="gist-id-info" style="display:none;font-size:11px;color:var(--muted);margin-top:2px;word-break:break-all;"></div>
+    <div style="margin-top:10px;font-size:11px;color:var(--muted);border-top:1px solid var(--line);padding-top:10px;">
+      トークン取得: GitHub → Settings → Developer settings → Personal access tokens → Tokens (classic) → スコープ「gist」にチェック
+    </div>
+  </div>
+
+  <div class="settings-section">
+    <h3>このアプリについて</h3>
+    <div class="desc">
+      2026年バリュー評価 目標②③の日々の活動記録アプリ。<br>
+      目標①（昇格試験対策）は対象外。<br>
+      データはこの端末のブラウザに保存されます。
+    </div>
+  </div>
+</section>
+
+</main>
+
+<div class="toast" id="toast"></div>
+
+<div class="modal" id="photo-modal" onclick="closePhotoModal()">
+  <button class="modal-close" onclick="closePhotoModal()">×</button>
+  <img id="photo-modal-img" alt="">
+</div>
+
+<script>
+'use strict';
+
+// ========================================================================
+// 定数
+// ========================================================================
+const STORAGE_KEY = 'value_eval_2026_v2';
+const PHOTO_MAX_SIZE = 1280;
+const PHOTO_QUALITY = 0.75;
+
+const GOAL_TITLES = {
+  2: '② 管理プロセスの高度化',
+  3: '③ 技術の高度化'
+};
+
+const GOAL_CARD_TITLES = {
+  2: 'IT・AI 学び／相談／発信',
+  3: '不具合・手戻り事例（社内共有）'
+};
+
+const GIST_TOKEN_KEY = 'value_eval_gist_token';
+const GIST_ID_KEY = 'value_eval_gist_id';
+const GIST_FILENAME = 'value_eval_2026.json';
+
+// ========================================================================
+// 状態
+// ========================================================================
+const photoBuffer = { 2: [], 3: [] };
+const docBuffer = { 2: [], 3: [] };
+let currentFilter = 'all';
+let editingId = null;
+
+// ========================================================================
+// ストレージ
+// ========================================================================
+function loadRecords() {
+  try {
+    return JSON.parse(localStorage.getItem(STORAGE_KEY) || '[]');
+  } catch { return []; }
+}
+
+function saveRecordsLocal(records) {
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(records));
+}
+
+function saveRecords(records) {
+  saveRecordsLocal(records);
+  syncToGist(records);
+}
+
+// ========================================================================
+// ユーティリティ
+// ========================================================================
+function showToast(msg) {
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.classList.add('show');
+  setTimeout(() => t.classList.remove('show'), 1800);
+}
+
+function todayStr() {
+  const d = new Date();
+  return d.getFullYear() + '-' +
+         String(d.getMonth()+1).padStart(2,'0') + '-' +
+         String(d.getDate()).padStart(2,'0');
+}
+
+function escapeHtml(s) {
+  return String(s).replace(/[&<>"']/g, c => ({
+    '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'
+  }[c]));
+}
+
+function escapeAttr(s) {
+  return String(s).replace(/'/g, "\\'");
+}
+
+// ========================================================================
+// 写真処理
+// ========================================================================
+function resizeImage(file, maxSize = PHOTO_MAX_SIZE) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = e => {
+      const img = new Image();
+      img.onload = () => {
+        let { width, height } = img;
+        if (width > height && width > maxSize) {
+          height = height * (maxSize / width);
+          width = maxSize;
+        } else if (height > maxSize) {
+          width = width * (maxSize / height);
+          height = maxSize;
+        }
+        const canvas = document.createElement('canvas');
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext('2d');
+        ctx.drawImage(img, 0, 0, width, height);
+        resolve(canvas.toDataURL('image/jpeg', PHOTO_QUALITY));
+      };
+      img.onerror = reject;
+      img.src = e.target.result;
+    };
+    reader.onerror = reject;
+    reader.readAsDataURL(file);
+  });
+}
+
+async function addPhoto(goalNum, input) {
+  const files = Array.from(input.files);
+  if (files.length === 0) return;
+
+  showToast('処理中...');
+  for (const file of files) {
+    try {
+      const dataUrl = await resizeImage(file);
+      photoBuffer[goalNum].push(dataUrl);
+    } catch {
+      showToast('画像の読み込みに失敗');
+    }
+  }
+  input.value = '';
+  renderPhotoPreview(goalNum);
+  showToast(`写真を追加しました（${photoBuffer[goalNum].length}枚）`);
+}
+
+function renderPhotoPreview(goalNum) {
+  const container = document.getElementById(`g${goalNum}-photos`);
+  const photos = photoBuffer[goalNum].map((src, i) => `
+    <div class="photo-thumb">
+      <img src="${src}" onclick="openPhotoModal('${escapeAttr(src)}')">
+      <button class="photo-remove" onclick="removePhoto(${goalNum}, ${i})">×</button>
+    </div>
+  `).join('');
+  const docs = docBuffer[goalNum].map((doc, i) => `
+    <div class="photo-thumb doc-thumb">
+      <div class="doc-icon">PDF</div>
+      <div class="doc-name">${escapeHtml(doc.name.replace(/\.pdf$/i,''))}</div>
+      <button class="photo-remove" onclick="removeDoc(${goalNum}, ${i})">×</button>
+    </div>
+  `).join('');
+  container.innerHTML = photos + docs;
+}
+
+function removePhoto(goalNum, index) {
+  photoBuffer[goalNum].splice(index, 1);
+  renderPhotoPreview(goalNum);
+}
+
+async function addDoc(goalNum, input) {
+  const files = Array.from(input.files);
+  if (files.length === 0) return;
+  showToast('読み込み中...');
+  for (const file of files) {
+    await new Promise(resolve => {
+      const reader = new FileReader();
+      reader.onload = e => {
+        docBuffer[goalNum].push({ name: file.name, data: e.target.result });
+        resolve();
+      };
+      reader.readAsDataURL(file);
+    });
+  }
+  input.value = '';
+  renderPhotoPreview(goalNum);
+  showToast(`PDF追加（${docBuffer[goalNum].length}件）`);
+}
+
+function removeDoc(goalNum, index) {
+  docBuffer[goalNum].splice(index, 1);
+  renderPhotoPreview(goalNum);
+}
+
+function openPhotoModal(src) {
+  document.getElementById('photo-modal-img').src = src;
+  document.getElementById('photo-modal').classList.add('show');
+}
+
+function closePhotoModal() {
+  document.getElementById('photo-modal').classList.remove('show');
+}
+
+// ========================================================================
+// 記録保存
+// ========================================================================
+function saveRecord(goalNum) {
+  const records = loadRecords();
+  const isEdit = editingId !== null;
+  let rec = isEdit
+    ? { ...records.find(r => r.id === editingId) }
+    : { id: Date.now(), goal: goalNum, photos: [], docs: [] };
+  rec.photos = [...photoBuffer[goalNum]];
+  rec.docs = [...docBuffer[goalNum]];
+
+  if (goalNum === 2) {
+    const date = document.getElementById('g2-date').value;
+    const type = document.getElementById('g2-type').value;
+    const title = document.getElementById('g2-title').value.trim();
+    const content = document.getElementById('g2-content').value.trim();
+    if (!title) { showToast('テーマを入力してください'); return; }
+    rec = { ...rec, date, type, title, content };
+    ['g2-title','g2-content'].forEach(id => document.getElementById(id).value = '');
+  } else if (goalNum === 3) {
+    const date = document.getElementById('g3-date').value;
+    const site = document.getElementById('g3-site').value.trim();
+    const event = document.getElementById('g3-event').value.trim();
+    const cause = document.getElementById('g3-cause').value.trim();
+    const action = document.getElementById('g3-action').value.trim();
+    const shareInternal = Array.from(
+      document.querySelectorAll('#g3-share-internal .check-chip.checked')
+    ).map(el => el.dataset.value);
+    if (!event) { showToast('事象を入力してください'); return; }
+    rec = { ...rec, date, site, event, cause, action, shareInternal };
+    ['g3-site','g3-event','g3-cause','g3-action'].forEach(id => document.getElementById(id).value = '');
+    document.querySelectorAll('#g3-share-internal .check-chip').forEach(el => el.classList.remove('checked'));
+  }
+
+  rec.updatedAt = Date.now();
+  try {
+    if (isEdit) {
+      rec.exported = false;
+      const idx = records.findIndex(r => r.id === editingId);
+      records[idx] = rec;
+    } else {
+      records.push(rec);
+    }
+    saveRecords(records);
+    photoBuffer[goalNum] = [];
+    docBuffer[goalNum] = [];
+    renderPhotoPreview(goalNum);
+    if (isEdit) {
+      editingId = null;
+      document.getElementById(`g${goalNum}-edit-bar`).style.display = 'none';
+      document.getElementById(`g${goalNum}-save-btn`).textContent = '記録する';
+      showToast('更新しました');
+    } else {
+      showToast('記録しました');
+    }
+  } catch (e) {
+    showToast('保存失敗：容量不足の可能性');
+  }
+}
+
+// ========================================================================
+// 一覧表示
+// ========================================================================
+function renderList() {
+  const list = document.getElementById('record-list');
+  let records = loadRecords();
+  if (currentFilter !== 'all') {
+    records = records.filter(r => r.goal === parseInt(currentFilter));
+  }
+  records.sort((a,b) => b.date.localeCompare(a.date) || b.id - a.id);
+
+  if (records.length === 0) {
+    list.innerHTML = '<div class="empty">記録がありません</div>';
+    return;
+  }
+
+  list.innerHTML = records.map(r => {
+    const tagName = GOAL_TITLES[r.goal];
+    let body = '';
+    let meta = '';
+    if (r.goal === 2) {
+      body = `【${r.type}】${r.title}` + (r.content ? '\n' + r.content : '');
+    } else if (r.goal === 3) {
+      body = `事象：${r.event}` +
+             (r.cause ? `\n原因：${r.cause}` : '') +
+             (r.action ? `\n対策：${r.action}` : '');
+      const parts = [];
+      if (r.site) parts.push(r.site);
+      if (r.shareInternal && r.shareInternal.length > 0) {
+        parts.push(`共有先：${r.shareInternal.join('・')}`);
+      }
+      meta = parts.join(' / ');
+    }
+
+    return `
+      <div class="record g${r.goal}">
+        <div class="record-head">
+          <span class="record-tag g${r.goal}">${tagName}</span>
+          <div style="display:flex;align-items:center;gap:6px;">
+            ${r.exported ? '<span class="exported-badge">出力済</span>' : ''}
+            <span>${r.date}</span>
+          </div>
+        </div>
+        <div class="record-body">${escapeHtml(body)}</div>
+        ${meta ? `<div class="record-meta">${escapeHtml(meta)}</div>` : ''}
+        ${r.photos && r.photos.length > 0 ? `
+          <div class="record-photos">
+            ${r.photos.map(p => `<img src="${p}" onclick="openPhotoModal('${escapeAttr(p)}')">`).join('')}
+          </div>
+        ` : ''}
+        ${r.docs && r.docs.length > 0 ? `
+          <div class="record-docs">
+            ${r.docs.map(d => `<a class="doc-badge" href="${d.data}" download="${escapeHtml(d.name)}"><span class="doc-badge-icon">PDF</span>${escapeHtml(d.name)}</a>`).join('')}
+          </div>
+        ` : ''}
+        <div class="record-actions">
+          <button onclick="startEdit(${r.id})">編集</button>
+          <button onclick="deleteRecord(${r.id})" style="color:#c8554a;">削除</button>
+        </div>
+      </div>
+    `;
+  }).join('');
+}
+
+function deleteRecord(id) {
+  if (!confirm('この記録を削除しますか？')) return;
+  let records = loadRecords();
+  records = records.filter(r => r.id !== id);
+  saveRecords(records);
+  renderList();
+  renderStats();
+  showToast('削除しました');
+}
+
+function startEdit(id) {
+  const records = loadRecords();
+  const rec = records.find(r => r.id === id);
+  if (!rec) return;
+
+  editingId = id;
+  const g = rec.goal;
+
+  document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+  document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
+  document.querySelector('[data-view="record"]').classList.add('active');
+  document.getElementById('view-record').classList.add('active');
+
+  if (g === 2) {
+    document.getElementById('g2-date').value = rec.date || '';
+    document.getElementById('g2-type').value = rec.type || '学習';
+    document.getElementById('g2-title').value = rec.title || '';
+    document.getElementById('g2-content').value = rec.content || '';
+    photoBuffer[2] = [...(rec.photos || [])];
+    docBuffer[2] = [...(rec.docs || [])];
+    renderPhotoPreview(2);
+    document.getElementById('g2-edit-bar').style.display = 'flex';
+    document.getElementById('g2-save-btn').textContent = '更新する';
+    document.querySelector('.goal-card.g2').scrollIntoView({ behavior: 'smooth' });
+  } else {
+    document.getElementById('g3-date').value = rec.date || '';
+    document.getElementById('g3-site').value = rec.site || '';
+    document.getElementById('g3-event').value = rec.event || '';
+    document.getElementById('g3-cause').value = rec.cause || '';
+    document.getElementById('g3-action').value = rec.action || '';
+    document.querySelectorAll('#g3-share-internal .check-chip').forEach(chip => {
+      chip.classList.toggle('checked', (rec.shareInternal || []).includes(chip.dataset.value));
+    });
+    photoBuffer[3] = [...(rec.photos || [])];
+    docBuffer[3] = [...(rec.docs || [])];
+    renderPhotoPreview(3);
+    document.getElementById('g3-edit-bar').style.display = 'flex';
+    document.getElementById('g3-save-btn').textContent = '更新する';
+    document.querySelector('.goal-card.g3').scrollIntoView({ behavior: 'smooth' });
+  }
+}
+
+function cancelEdit() {
+  if (editingId === null) return;
+  const records = loadRecords();
+  const rec = records.find(r => r.id === editingId);
+  const g = rec ? rec.goal : null;
+  editingId = null;
+  if (g) {
+    document.getElementById(`g${g}-edit-bar`).style.display = 'none';
+    document.getElementById(`g${g}-save-btn`).textContent = '記録する';
+    photoBuffer[g] = [];
+    docBuffer[g] = [];
+    renderPhotoPreview(g);
+    if (g === 2) {
+      ['g2-title','g2-content'].forEach(id => document.getElementById(id).value = '');
+      document.getElementById('g2-date').value = todayStr();
+    } else {
+      ['g3-site','g3-event','g3-cause','g3-action'].forEach(id => document.getElementById(id).value = '');
+      document.querySelectorAll('#g3-share-internal .check-chip').forEach(el => el.classList.remove('checked'));
+      document.getElementById('g3-date').value = todayStr();
+    }
+  }
+  showToast('キャンセルしました');
+}
+
+// ========================================================================
+// 集計
+// ========================================================================
+function renderStats() {
+  const records = loadRecords();
+  const counts = { 2: 0, 3: 0 };
+  records.forEach(r => { if (counts[r.goal] !== undefined) counts[r.goal]++; });
+
+  const g2Sent = records.filter(r => r.goal === 2 && r.type === '発信').length;
+  const g2Tools = records.filter(r => r.goal === 2 && r.type === 'ツール作成').length;
+
+  // 部門別共有件数
+  const deptCount = { 営業: 0, 設計: 0, 生産: 0 };
+  records.filter(r => r.goal === 3 && r.shareInternal).forEach(r => {
+    r.shareInternal.forEach(d => { if (deptCount[d] !== undefined) deptCount[d]++; });
+  });
+
+  document.getElementById('stats').innerHTML = `
+    <div class="stat-row"><span>② 管理プロセス 記録数</span><span class="stat-num">${counts[2]}件</span></div>
+    <div class="stat-row"><span>　うち発信</span><span class="stat-num">${g2Sent}件 <small style="color:var(--muted)">/ 月1件</small></span></div>
+    <div class="stat-row"><span>　うちツール作成</span><span class="stat-num">${g2Tools}件</span></div>
+    <div class="stat-row"><span>③ 技術 記録数</span><span class="stat-num">${counts[3]}件</span></div>
+    <div class="stat-row"><span>　営業へ共有</span><span class="stat-num">${deptCount.営業}件</span></div>
+    <div class="stat-row"><span>　設計へ共有</span><span class="stat-num">${deptCount.設計}件</span></div>
+    <div class="stat-row"><span>　生産へ共有</span><span class="stat-num">${deptCount.生産}件</span></div>
+    <div class="stat-row"><span>記録総数</span><span class="stat-num">${records.length}件</span></div>
+  `;
+}
+
+// ========================================================================
+// テキスト生成
+// ========================================================================
+function formatRecord(r) {
+  let out = '';
+  if (r.goal === 2) {
+    out += `**${r.date}　${r.type}**\n`;
+    out += `テーマ：${r.title}\n`;
+    if (r.content) out += `${r.content}\n`;
+  } else {
+    out += `**${r.date}` + (r.site ? `　${r.site}` : '') + `**\n`;
+    out += `事象：${r.event}\n`;
+    if (r.cause) out += `原因：${r.cause}\n`;
+    if (r.action) out += `対策：${r.action}\n`;
+    const si = (r.shareInternal && r.shareInternal.length > 0)
+      ? r.shareInternal.join('・') : 'なし';
+    out += `共有先：${si}\n`;
+  }
+  const attachCount = (r.photos ? r.photos.length : 0) + (r.docs ? r.docs.length : 0);
+  if (attachCount > 0) out += `（添付${attachCount}件）\n`;
+  return out;
+}
+
+function buildAttachHtml(items) {
+  return items
+    .filter(r => (r.photos && r.photos.length > 0) || (r.docs && r.docs.length > 0))
+    .map(r => {
+      const label = r.goal === 2
+        ? `${r.date}　${r.type}　${r.title}`
+        : `${r.date}` + (r.site ? `　${r.site}` : '') + `　${r.event}`;
+      const photos = (r.photos || []).map(p =>
+        `<img src="${p}" onclick="openPhotoModal('${escapeAttr(p)}')">`
+      ).join('');
+      const docs = (r.docs || []).map(d =>
+        `<a class="doc-badge" href="${d.data}" download="${escapeHtml(d.name)}"><span class="doc-badge-icon">PDF</span>${escapeHtml(d.name)}</a>`
+      ).join('');
+      return `<div style="margin-bottom:12px;">
+        <div style="font-size:12px;color:var(--muted);margin-bottom:6px;">${escapeHtml(label)}</div>
+        ${photos ? `<div class="record-photos" style="margin-bottom:6px;">${photos}</div>` : ''}
+        ${docs ? `<div class="record-docs">${docs}</div>` : ''}
+      </div>`;
+    }).join('');
+}
+
+function generateText() {
+  const from = document.getElementById('out-from').value;
+  const to = document.getElementById('out-to').value;
+  const target = document.getElementById('out-goal').value;
+  const pool = loadRecords().filter(r => r.date >= from && r.date <= to);
+  const goals = target === 'all' ? [2, 3] : [parseInt(target)];
+
+  const container = document.getElementById('output-results');
+  document.getElementById('output-photos-section').style.display = 'none';
+  let allExportedIds = [];
+  let html = '';
+
+  goals.forEach(g => {
+    const items = pool.filter(r => r.goal === g).sort((a,b) => a.date.localeCompare(b.date));
+    if (items.length === 0) {
+      if (target !== 'all') {
+        html += `<div class="output-section"><p style="color:var(--muted);text-align:center;padding:20px 0;">該当期間に記録がありません</p></div>`;
+      }
+      return;
+    }
+    let out = `## ${GOAL_CARD_TITLES[g]}\n期間：${from}〜${to}（${items.length}件）\n\n`;
+    items.forEach(r => { out += formatRecord(r) + '\n'; });
+    const attachHtml = buildAttachHtml(items);
+    html += `<div class="output-section">
+      <h3>${escapeHtml(GOAL_TITLES[g])}（${items.length}件）</h3>
+      <button class="btn btn-secondary" onclick="copyBlock(this)" style="margin-bottom:10px;">コピー</button>
+      <div class="output-text">${escapeHtml(out)}</div>
+      ${attachHtml ? `<div style="margin-top:12px;padding-top:12px;border-top:1px dashed var(--line);"><div style="font-size:12px;font-weight:600;color:var(--muted);margin-bottom:8px;">写真・添付（長押しで保存→LINE WORKSへ）</div>${attachHtml}</div>` : ''}
+    </div>`;
+    allExportedIds = allExportedIds.concat(items.map(r => r.id));
+  });
+
+  if (!html) {
+    html = `<div class="output-section"><p style="color:var(--muted);text-align:center;padding:20px 0;">該当期間に記録がありません</p></div>`;
+  }
+
+  container.innerHTML = html;
+  if (allExportedIds.length > 0) markAsExported(allExportedIds);
+}
+
+function copyBlock(btn) {
+  const text = btn.nextElementSibling.textContent;
+  navigator.clipboard.writeText(text)
+    .then(() => showToast('コピーしました'))
+    .catch(() => showToast('コピーに失敗しました'));
+}
+
+function markAsExported(ids) {
+  const records = loadRecords();
+  records.forEach(r => { if (ids.includes(r.id)) r.exported = true; });
+  saveRecords(records);
+  if (document.getElementById('view-list').classList.contains('active')) renderList();
+}
+
+function renderOutputPhotos(records) {
+  const section = document.getElementById('output-photos-section');
+  const container = document.getElementById('output-photos');
+  const withAttach = records.filter(r =>
+    (r.photos && r.photos.length > 0) || (r.docs && r.docs.length > 0)
+  );
+  if (withAttach.length === 0) { section.style.display = 'none'; return; }
+  container.innerHTML = withAttach.map(r => {
+    const label = r.goal === 2
+      ? `${r.date}　${r.type}　${r.title}`
+      : `${r.date}` + (r.site ? `　${r.site}` : '') + `　${r.event}`;
+    const photos = r.photos && r.photos.length > 0 ? `
+      <div class="record-photos" style="margin-bottom:6px;">
+        ${r.photos.map(p => `<img src="${p}" onclick="openPhotoModal('${escapeAttr(p)}')">`).join('')}
+      </div>` : '';
+    const docs = r.docs && r.docs.length > 0 ? `
+      <div class="record-docs">
+        ${r.docs.map(d => `<a class="doc-badge" href="${d.data}" download="${escapeHtml(d.name)}"><span class="doc-badge-icon">PDF</span>${escapeHtml(d.name)}</a>`).join('')}
+      </div>` : '';
+    return `
+      <div style="margin-bottom:14px;">
+        <div style="font-size:12px;color:var(--muted);margin-bottom:6px;">${escapeHtml(label)}</div>
+        ${photos}${docs}
+      </div>`;
+  }).join('');
+  section.style.display = 'block';
+}
+
+// ========================================================================
+// バックアップ
+// ========================================================================
+function exportData() {
+  const records = loadRecords();
+  const blob = new Blob([JSON.stringify(records, null, 2)], { type: 'application/json' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `value_eval_backup_${todayStr()}.json`;
+  a.click();
+  URL.revokeObjectURL(url);
+  showToast('書き出しました');
+}
+
+function importData() {
+  const file = document.getElementById('import-file').files[0];
+  if (!file) { showToast('ファイルを選択してください'); return; }
+  const reader = new FileReader();
+  reader.onload = e => {
+    try {
+      const data = JSON.parse(e.target.result);
+      if (!Array.isArray(data)) throw new Error();
+      if (!confirm(`${data.length}件のデータを復元します。現在のデータは上書きされます。`)) return;
+      saveRecords(data);
+      showToast('復元しました');
+      renderList();
+      renderStats();
+    } catch {
+      showToast('ファイルが不正です');
+    }
+  };
+  reader.readAsText(file);
+}
+
+function clearAll() {
+  if (!confirm('すべてのデータを削除します。よろしいですか？')) return;
+  if (!confirm('本当に削除しますか？元に戻せません。')) return;
+  saveRecords([]);
+  showToast('削除しました');
+  renderList();
+  renderStats();
+}
+
+// ========================================================================
+// Gist 同期
+// ========================================================================
+function getGistToken() { return localStorage.getItem(GIST_TOKEN_KEY) || ''; }
+function getGistId() { return localStorage.getItem(GIST_ID_KEY) || ''; }
+
+function updateSyncUI(state, detail) {
+  const wrap = document.getElementById('sync-wrap');
+  const icon = document.getElementById('sync-icon');
+  const status = document.getElementById('gist-sync-status');
+  if (wrap && icon) {
+    wrap.classList.toggle('syncing', state === 'syncing');
+    const strokeMap = { syncing: '#3d5a7a', ok: '#5a7a4c', error: '#c8554a' };
+    icon.style.stroke = strokeMap[state] || 'var(--muted)';
+    wrap.style.opacity = (state === 'idle' || !state) ? '0.25' : '1';
+  }
+  if (status) {
+    const colorMap = { syncing: '#3d5a7a', ok: '#5a7a4c', error: '#c8554a' };
+    status.style.color = colorMap[state] || 'var(--muted)';
+    const msgMap = { syncing: '同期中...', ok: detail || '同期済み', error: detail || 'エラー', idle: '' };
+    status.textContent = msgMap[state] || '';
+  }
+}
+
+async function findOrCreateGist(token, initialData) {
+  for (let page = 1; page <= 2; page++) {
+    const res = await fetch(`https://api.github.com/gists?per_page=100&page=${page}`, {
+      headers: { 'Authorization': `token ${token}` }
+    });
+    if (!res.ok) throw new Error(`認証エラー (${res.status})`);
+    const gists = await res.json();
+    const found = gists.find(g => g.files && g.files[GIST_FILENAME]);
+    if (found) {
+      localStorage.setItem(GIST_ID_KEY, found.id);
+      return found.id;
+    }
+    if (gists.length < 100) break;
+  }
+  const data = initialData !== undefined ? initialData : loadRecords();
+  const res = await fetch('https://api.github.com/gists', {
+    method: 'POST',
+    headers: { 'Authorization': `token ${token}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      description: '2026バリュー評価記録データ（自動生成）',
+      public: false,
+      files: { [GIST_FILENAME]: { content: JSON.stringify(data) } }
+    })
+  });
+  if (!res.ok) throw new Error(`Gist作成失敗 (${res.status})`);
+  const gist = await res.json();
+  localStorage.setItem(GIST_ID_KEY, gist.id);
+  return gist.id;
+}
+
+async function pullGist(token, gistId) {
+  const res = await fetch(`https://api.github.com/gists/${gistId}`, {
+    headers: { 'Authorization': `token ${token}` }
+  });
+  if (!res.ok) throw new Error(`取得失敗 (${res.status})`);
+  const gist = await res.json();
+  const content = gist.files[GIST_FILENAME]?.content;
+  if (!content) return [];
+  const data = JSON.parse(content);
+  return Array.isArray(data) ? data : [];
+}
+
+async function pushGist(token, gistId, records) {
+  const res = await fetch(`https://api.github.com/gists/${gistId}`, {
+    method: 'PATCH',
+    headers: { 'Authorization': `token ${token}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ files: { [GIST_FILENAME]: { content: JSON.stringify(records) } } })
+  });
+  if (!res.ok) throw new Error(`書き込み失敗 (${res.status})`);
+}
+
+function mergeRecords(local, remote) {
+  const map = {};
+  local.forEach(r => { map[r.id] = r; });
+  remote.forEach(r => {
+    if (!map[r.id]) {
+      map[r.id] = r;
+    } else {
+      const lt = map[r.id].updatedAt || map[r.id].id;
+      const rt = r.updatedAt || r.id;
+      if (rt > lt) map[r.id] = r;
+    }
+  });
+  return Object.values(map);
+}
+
+async function syncFromGist(manual) {
+  const token = getGistToken();
+  if (!token) { if (manual) showToast('トークンを設定してください'); return; }
+  updateSyncUI('syncing');
+  try {
+    let id = getGistId();
+    if (!id) id = await findOrCreateGist(token);
+    const remote = await pullGist(token, id);
+    const local = loadRecords();
+    const merged = mergeRecords(local, remote);
+    saveRecordsLocal(merged);
+    await pushGist(token, id, merged);
+    const newCount = merged.length - local.length;
+    const now = new Date().toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit' });
+    updateSyncUI('ok', `同期済み ${now}`);
+    const idInfo = document.getElementById('gist-id-info');
+    if (idInfo) { idInfo.textContent = `Gist ID: ${id}`; idInfo.style.display = 'block'; }
+    if (manual) {
+      showToast(newCount > 0 ? `${newCount}件取得しました` : '同期しました');
+    } else if (newCount > 0) {
+      showToast(`${newCount}件の新しい記録を取得`);
+    }
+    if (document.getElementById('view-list').classList.contains('active')) renderList();
+    if (document.getElementById('view-output').classList.contains('active')) renderStats();
+  } catch (e) {
+    updateSyncUI('error', e.message);
+    if (manual) showToast(`同期エラー: ${e.message}`);
+  }
+}
+
+let syncTimer = null;
+async function syncToGist(records) {
+  const token = getGistToken();
+  if (!token) return;
+  clearTimeout(syncTimer);
+  syncTimer = setTimeout(async () => {
+    updateSyncUI('syncing');
+    try {
+      let id = getGistId();
+      if (!id) id = await findOrCreateGist(token, records);
+      await pushGist(token, id, records);
+      const now = new Date().toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit' });
+      updateSyncUI('ok', `同期済み ${now}`);
+      const idInfo = document.getElementById('gist-id-info');
+      if (idInfo) { idInfo.textContent = `Gist ID: ${id}`; idInfo.style.display = 'block'; }
+    } catch (e) {
+      updateSyncUI('error', e.message);
+      showToast(`同期エラー: ${e.message}`);
+    }
+  }, 1000);
+}
+
+function setupAppIcon() {
+  const size = 180;
+  const canvas = document.createElement('canvas');
+  canvas.width = size;
+  canvas.height = size;
+  const ctx = canvas.getContext('2d');
+
+  ctx.fillStyle = '#f5f3ee';
+  ctx.fillRect(0, 0, size, size);
+
+  ctx.fillStyle = '#5a7a4c';
+  ctx.fillRect(0, 0, 10, size);
+
+  ctx.fillStyle = '#3d5a7a';
+  ctx.fillRect(size - 10, 0, 10, size);
+
+  ctx.fillStyle = '#1a1a1a';
+  ctx.font = 'bold 92px -apple-system, "Hiragino Sans", sans-serif';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'alphabetic';
+  ctx.fillText('評', size / 2, 118);
+
+  ctx.fillStyle = '#6b6b6b';
+  ctx.font = '500 26px -apple-system, "Hiragino Sans", sans-serif';
+  ctx.fillText('2026', size / 2, 156);
+
+  const link = document.getElementById('apple-touch-icon');
+  if (link) link.href = canvas.toDataURL('image/png');
+}
+
+function saveGistSettings() {
+  const token = document.getElementById('gist-token').value.trim();
+  if (!token) { showToast('トークンを入力してください'); return; }
+  localStorage.setItem(GIST_TOKEN_KEY, token);
+  localStorage.removeItem(GIST_ID_KEY);
+  showToast('保存しました');
+  syncFromGist(true);
+}
+
+function manualSync() {
+  syncFromGist(true);
+}
+
+// ========================================================================
+// 初期化・イベント
+// ========================================================================
+document.addEventListener('DOMContentLoaded', () => {
+  // 日付初期値
+  document.getElementById('g2-date').value = todayStr();
+  document.getElementById('g3-date').value = todayStr();
+
+  const monthAgo = new Date();
+  monthAgo.setMonth(monthAgo.getMonth() - 1);
+  document.getElementById('out-from').value = monthAgo.toISOString().split('T')[0];
+  document.getElementById('out-to').value = todayStr();
+
+  // タブ
+  document.querySelectorAll('.tab').forEach(tab => {
+    tab.addEventListener('click', () => {
+      document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+      document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
+      tab.classList.add('active');
+      document.getElementById('view-' + tab.dataset.view).classList.add('active');
+      if (tab.dataset.view === 'list') renderList();
+      if (tab.dataset.view === 'output') renderStats();
+    });
+  });
+
+  // フィルタ
+  document.querySelectorAll('.chip').forEach(chip => {
+    chip.addEventListener('click', () => {
+      document.querySelectorAll('.chip').forEach(c => c.classList.remove('active'));
+      chip.classList.add('active');
+      currentFilter = chip.dataset.filter;
+      renderList();
+    });
+  });
+
+  // 社内共有先チェックチップ
+  document.querySelectorAll('#g3-share-internal .check-chip').forEach(chip => {
+    chip.addEventListener('click', () => {
+      chip.classList.toggle('checked');
+    });
+  });
+
+  renderList();
+  renderStats();
+  setupAppIcon();
+
+  // Gist 同期セットアップ
+  const savedToken = getGistToken();
+  if (savedToken) {
+    document.getElementById('gist-token').value = savedToken;
+    const savedId = getGistId();
+    if (savedId) {
+      const idInfo = document.getElementById('gist-id-info');
+      idInfo.textContent = `Gist ID: ${savedId}`;
+      idInfo.style.display = 'block';
+    }
+    syncFromGist(false);
+  }
+});
+</script>
+
+</body>
+</html>
